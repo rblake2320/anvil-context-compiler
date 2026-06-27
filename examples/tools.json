@@ -1,0 +1,26 @@
+[
+  {
+    "name": "repo.search",
+    "description": "Search repository files and symbol names without dumping full files into context.",
+    "input_schema": {"query": "string", "limit": "integer"},
+    "output_schema": {"matches": "array"},
+    "risk": "low",
+    "tags": ["repo", "code", "search"]
+  },
+  {
+    "name": "repo.read_file",
+    "description": "Read a specific file path after repo.search proves it is relevant.",
+    "input_schema": {"path": "string", "max_tokens": "integer"},
+    "output_schema": {"text": "string", "sha256": "string"},
+    "risk": "low",
+    "tags": ["repo", "file", "read"]
+  },
+  {
+    "name": "deploy.production",
+    "description": "Deploy current application version to production. Requires explicit approval.",
+    "input_schema": {"environment": "string", "version": "string"},
+    "output_schema": {"status": "string"},
+    "risk": "high",
+    "tags": ["deploy", "production", "high-risk"]
+  }
+]

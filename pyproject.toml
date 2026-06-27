@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anvil-context-compiler"
+version = "1.0.0"
+description = "Cache-aware, tool-minimized, reversible context compiler for AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Proprietary / Internal Evaluation"}
+authors = [{name = "ANVIL Product Team"}]
+keywords = ["agents", "context", "tokens", "prompt-caching", "mcp", "compression", "rag"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = []
+
+[project.scripts]
+anvil = "anvil_context_compiler.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
