@@ -32,6 +32,9 @@ jobs:
       - name: CLI smoke compile
         run: anvil-compile compile --request "CI smoke compile" --context-file examples/sample_context.md --tool-file examples/tools.json --out .anvil/ci_plan.json --prompt-out .anvil/ci_prompt.txt
 
+      - name: Ledger verification
+        run: anvil-compile verify-ledger --ledger .anvil/anvil_ledger.sqlite3 --require-anchor
+
       - name: API smoke tests
         env:
           ANVIL_API_KEY: ci-local-key

@@ -24,7 +24,7 @@ This is not a caveman-output compressor. It is a context operating layer for age
 - Compresses evidence into exact source spans saved in a local SQLite ledger.
 - Rehydrates exact spans by ID when accuracy risk demands more context.
 - Builds a YAGNI-gated execution DAG before code generation.
-- Produces a proof hash chain for compile decisions.
+- Produces a proof hash chain for compile decisions and persists a sidecar head anchor for compile-event tail checks.
 - Runs as a CLI or local HTTP API with no required third-party packages.
 
 ## Install
@@ -114,6 +114,14 @@ Output includes `prompt_package`, `execution_plan`, `zones`, `cache_key`, `proof
 
 Lists recent reversible context spans.
 
+## Verify the compile ledger
+
+```powershell
+anvil-compile verify-ledger --ledger .\.anvil\anvil_ledger.sqlite3 --require-anchor
+```
+
+Compile events are stored as a SQLite hash chain and each compile writes a sidecar head anchor containing the expected event count and final head hash. This detects edits and SQLite tail truncation when the anchor file is retained. For stronger attacker models, write the same head to an external store or sign it with a key not stored beside the ledger.
+
 ## Production deployment notes
 
 - Default bind address is `127.0.0.1`. Do not expose directly to the public internet.
@@ -130,4 +138,4 @@ Lists recent reversible context spans.
 3. Reversible context compression ledger.
 4. Token budget governor with acceptance checks.
 5. YAGNI execution gate for code-generation tasks.
-6. Proof ledger hash chain for compile decisions.
+6. Proof ledger hash chain and sidecar head anchor for compile decisions.

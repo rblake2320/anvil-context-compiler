@@ -46,6 +46,23 @@ class LedgerTests(unittest.TestCase):
                 conn.close()
             self.assertFalse(ledger.verify_compile_events())
 
+    def test_compile_event_anchor_detects_tail_truncation(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "ledger.sqlite3"
+            ledger = ContextLedger(str(db_path))
+            ledger.put_compile_event("evt", "req_hash_1", "plan_hash_1", {"tokens": 10})
+            ledger.put_compile_event("evt", "req_hash_2", "plan_hash_2", {"tokens": 12})
+            self.assertTrue(ledger.verify_compile_events(require_anchor=True))
+
+            conn = sqlite3.connect(str(db_path))
+            try:
+                last_rowid = conn.execute("SELECT rowid FROM compile_events ORDER BY rowid DESC LIMIT 1").fetchone()[0]
+                conn.execute("DELETE FROM compile_events WHERE rowid = ?", (last_rowid,))
+                conn.commit()
+            finally:
+                conn.close()
+            self.assertFalse(ledger.verify_compile_events(require_anchor=True))
+
 
 class CompressorTests(unittest.TestCase):
     def test_compress_under_budget_with_spans(self) -> None:

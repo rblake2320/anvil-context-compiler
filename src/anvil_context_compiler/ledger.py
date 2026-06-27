@@ -50,6 +50,7 @@ class ContextLedger:
 
     def __init__(self, path: str = ".anvil/anvil_ledger.sqlite3") -> None:
         self.path = Path(path)
+        self.anchor_path = self.path.with_name(f"{self.path.name}.compile_head.json")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -63,13 +64,17 @@ class ContextLedger:
             conn.close()
 
     def _init_db(self) -> None:
+        anchor_missing = not self.anchor_path.exists()
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
-            self._migrate_compile_events(conn)
+            legacy_rehashed = self._migrate_compile_events(conn)
+            event_count, event_sha256 = self._compile_event_head(conn)
             conn.commit()
+        if event_count > 0 and (legacy_rehashed or anchor_missing):
+            self._write_compile_anchor(event_count=event_count, event_sha256=event_sha256)
 
     @staticmethod
-    def _migrate_compile_events(conn: sqlite3.Connection) -> None:
+    def _migrate_compile_events(conn: sqlite3.Connection) -> bool:
         existing = {row["name"] for row in conn.execute("PRAGMA table_info(compile_events)").fetchall()}
         for name, ddl in {
             "previous_sha256": "ALTER TABLE compile_events ADD COLUMN previous_sha256 TEXT NOT NULL DEFAULT ''",
@@ -78,6 +83,47 @@ class ContextLedger:
         }.items():
             if name not in existing:
                 conn.execute(ddl)
+        rows = conn.execute("SELECT rowid, * FROM compile_events ORDER BY rowid ASC").fetchall()
+        has_legacy_rows = any(not row["previous_sha256"] or not row["payload_sha256"] or not row["event_sha256"] for row in rows)
+        if not has_legacy_rows:
+            return False
+
+        # Pre-anchor ledgers cannot prove prior tail state, but we can anchor the
+        # current row order so future edits and truncation are detectable.
+        previous_sha256 = "GENESIS"
+        for row in rows:
+            try:
+                metrics = json.loads(row["metrics_json"] or "{}")
+            except json.JSONDecodeError:
+                metrics = {}
+            payload = {
+                "event_id": row["event_id"],
+                "request_hash": row["request_hash"],
+                "plan_hash": row["plan_hash"],
+                "metrics": metrics,
+                "created_at": row["created_at"],
+            }
+            payload_sha256 = sha256_json(payload)
+            event_sha256 = sha256_json({"payload_sha256": payload_sha256, "previous_sha256": previous_sha256})
+            conn.execute(
+                """
+                UPDATE compile_events
+                SET previous_sha256 = ?, payload_sha256 = ?, event_sha256 = ?
+                WHERE rowid = ?
+                """,
+                (previous_sha256, payload_sha256, event_sha256, row["rowid"]),
+            )
+            previous_sha256 = event_sha256
+        return True
+
+    @staticmethod
+    def _compile_event_head(conn: sqlite3.Connection) -> tuple[int, str]:
+        row = conn.execute("SELECT COUNT(*) AS event_count FROM compile_events").fetchone()
+        event_count = int(row["event_count"])
+        if event_count == 0:
+            return 0, "GENESIS"
+        head = conn.execute("SELECT event_sha256 FROM compile_events ORDER BY rowid DESC LIMIT 1").fetchone()
+        return event_count, str(head["event_sha256"])
 
     def put_span(
         self,
@@ -226,8 +272,22 @@ class ContextLedger:
                     created_at,
                 ),
             )
+            event_count = int(conn.execute("SELECT COUNT(*) FROM compile_events").fetchone()[0])
             conn.commit()
+        self._write_compile_anchor(event_count=event_count, event_sha256=event_sha256)
         return event_sha256
+
+    def _write_compile_anchor(self, *, event_count: int, event_sha256: str) -> None:
+        payload = {
+            "ledger_path": str(self.path),
+            "event_count": event_count,
+            "event_sha256": event_sha256,
+            "updated_at": utc_now(),
+        }
+        self.anchor_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = self.anchor_path.with_name(f"{self.anchor_path.name}.tmp")
+        tmp_path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp_path, self.anchor_path)
 
     @staticmethod
     def _unique_compile_event_id(conn: sqlite3.Connection, event_id: str) -> str:
@@ -238,7 +298,7 @@ class ContextLedger:
             suffix += 1
         return candidate
 
-    def verify_compile_events(self) -> bool:
+    def verify_compile_events(self, *, require_anchor: bool = False) -> bool:
         with self._connect() as conn:
             rows = conn.execute("SELECT * FROM compile_events ORDER BY rowid ASC").fetchall()
 
@@ -266,4 +326,16 @@ class ContextLedger:
             if row["event_sha256"] != event_sha256:
                 return False
             expected_previous = row["event_sha256"]
+        if self.anchor_path.exists() or require_anchor:
+            if not self._verify_compile_anchor(event_count=len(rows), event_sha256=expected_previous):
+                return False
         return True
+
+    def _verify_compile_anchor(self, *, event_count: int, event_sha256: str) -> bool:
+        if not self.anchor_path.exists():
+            return False
+        try:
+            payload = json.loads(self.anchor_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        return payload.get("event_count") == event_count and payload.get("event_sha256") == event_sha256

@@ -21,4 +21,5 @@ if (Test-Path $activate) { . $activate }
 
 Invoke-NativeChecked "unit tests" { python -m unittest discover -s tests }
 Invoke-NativeChecked "CLI smoke compile" { anvil-compile compile --request "Build a minimal context compiler test" --context-file .\examples\sample_context.md --tool-file .\examples\tools.json --out .\.anvil\smoke_plan.json --prompt-out .\.anvil\smoke_prompt.txt }
+Invoke-NativeChecked "ledger verification" { anvil-compile verify-ledger --ledger .\.anvil\anvil_ledger.sqlite3 --require-anchor }
 Write-Host "ANVIL smoke test complete." -ForegroundColor Green

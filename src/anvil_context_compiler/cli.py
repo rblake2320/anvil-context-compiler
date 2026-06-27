@@ -71,6 +71,21 @@ def cmd_list_spans(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_verify_ledger(args: argparse.Namespace) -> int:
+    compiler = AnvilCompiler(CompilerConfig(ledger_path=args.ledger))
+    ok = compiler.ledger.verify_compile_events(require_anchor=args.require_anchor)
+    _write_json(
+        args.out,
+        {
+            "ok": ok,
+            "ledger": str(compiler.ledger.path),
+            "anchor": str(compiler.ledger.anchor_path),
+            "anchor_required": args.require_anchor,
+        },
+    )
+    return 0 if ok else 1
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     config = CompilerConfig(ledger_path=args.ledger, total_token_budget=args.budget).clamp()
     run_server(args.host, args.port, config, allow_unauthenticated_localhost=args.allow_unauthenticated_localhost)
@@ -107,6 +122,12 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("--ledger", default=".anvil/anvil_ledger.sqlite3")
     ls.add_argument("--out")
     ls.set_defaults(func=cmd_list_spans)
+
+    v = sub.add_parser("verify-ledger", help="Verify compile-event hash chain and optional sidecar head anchor")
+    v.add_argument("--ledger", default=".anvil/anvil_ledger.sqlite3")
+    v.add_argument("--require-anchor", action="store_true")
+    v.add_argument("--out")
+    v.set_defaults(func=cmd_verify_ledger)
 
     s = sub.add_parser("serve", help="Run local HTTP API")
     s.add_argument("--host", default="127.0.0.1")
