@@ -42,7 +42,7 @@ Python 3.11+ works. Python 3.12 is recommended for Windows shops.
 ## Compile a request
 
 ```powershell
-anvil compile `
+anvil-compile compile `
   --request "Build a minimal repo scanner without unnecessary dependencies" `
   --context-file .\examples\sample_context.md `
   --budget 12000 `
@@ -54,7 +54,7 @@ anvil compile `
 
 ```powershell
 $env:ANVIL_API_KEY = "change-me-local-dev-key"
-anvil serve --host 127.0.0.1 --port 8787
+anvil-compile serve --host 127.0.0.1 --port 8787
 ```
 
 Compile through HTTP:
@@ -117,7 +117,7 @@ Lists recent reversible context spans.
 ## Production deployment notes
 
 - Default bind address is `127.0.0.1`. Do not expose directly to the public internet.
-- Set `ANVIL_API_KEY` for bearer-token auth.
+- Set `ANVIL_API_KEY` for bearer-token auth. If no key is set, requests fail closed unless the server is explicitly started with `--allow-unauthenticated-localhost`.
 - Keep ledgers per project or per tenant.
 - Treat ledger files as sensitive because they may contain source context.
 - Put this behind your existing gateway if used in enterprise environments.
@@ -131,4 +131,3 @@ Lists recent reversible context spans.
 4. Token budget governor with acceptance checks.
 5. YAGNI execution gate for code-generation tasks.
 6. Proof ledger hash chain for compile decisions.
-

@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from .hashing import sha256_text
+from .hashing import sha256_json, sha256_text
 from .models import EvidenceSpan, utc_now
 from .token_meter import estimate_tokens
 
@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS compile_events (
     request_hash TEXT NOT NULL,
     plan_hash TEXT NOT NULL,
     metrics_json TEXT NOT NULL,
+    previous_sha256 TEXT NOT NULL DEFAULT '',
+    payload_sha256 TEXT NOT NULL DEFAULT '',
+    event_sha256 TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_spans_source_hash ON spans(source_hash);
@@ -62,7 +65,19 @@ class ContextLedger:
     def _init_db(self) -> None:
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            self._migrate_compile_events(conn)
             conn.commit()
+
+    @staticmethod
+    def _migrate_compile_events(conn: sqlite3.Connection) -> None:
+        existing = {row["name"] for row in conn.execute("PRAGMA table_info(compile_events)").fetchall()}
+        for name, ddl in {
+            "previous_sha256": "ALTER TABLE compile_events ADD COLUMN previous_sha256 TEXT NOT NULL DEFAULT ''",
+            "payload_sha256": "ALTER TABLE compile_events ADD COLUMN payload_sha256 TEXT NOT NULL DEFAULT ''",
+            "event_sha256": "ALTER TABLE compile_events ADD COLUMN event_sha256 TEXT NOT NULL DEFAULT ''",
+        }.items():
+            if name not in existing:
+                conn.execute(ddl)
 
     def put_span(
         self,
@@ -169,13 +184,86 @@ class ContextLedger:
             for row in rows
         ]
 
-    def put_compile_event(self, event_id: str, request_hash: str, plan_hash: str, metrics: dict[str, Any]) -> None:
+    def put_compile_event(self, event_id: str, request_hash: str, plan_hash: str, metrics: dict[str, Any]) -> str:
         with self._connect() as conn:
+            stored_event_id = self._unique_compile_event_id(conn, event_id)
+            previous_row = conn.execute(
+                "SELECT event_sha256 FROM compile_events WHERE event_sha256 != '' ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            previous_sha256 = previous_row["event_sha256"] if previous_row else "GENESIS"
+            created_at = utc_now()
+            payload = {
+                "event_id": stored_event_id,
+                "request_hash": request_hash,
+                "plan_hash": plan_hash,
+                "metrics": metrics,
+                "created_at": created_at,
+            }
+            payload_sha256 = sha256_json(payload)
+            event_sha256 = sha256_json({"payload_sha256": payload_sha256, "previous_sha256": previous_sha256})
             conn.execute(
                 """
-                INSERT OR REPLACE INTO compile_events(event_id, request_hash, plan_hash, metrics_json, created_at)
-                VALUES(?,?,?,?,?)
+                INSERT INTO compile_events(
+                    event_id,
+                    request_hash,
+                    plan_hash,
+                    metrics_json,
+                    previous_sha256,
+                    payload_sha256,
+                    event_sha256,
+                    created_at
+                )
+                VALUES(?,?,?,?,?,?,?,?)
                 """,
-                (event_id, request_hash, plan_hash, json.dumps(metrics, sort_keys=True), utc_now()),
+                (
+                    stored_event_id,
+                    request_hash,
+                    plan_hash,
+                    json.dumps(metrics, sort_keys=True),
+                    previous_sha256,
+                    payload_sha256,
+                    event_sha256,
+                    created_at,
+                ),
             )
             conn.commit()
+        return event_sha256
+
+    @staticmethod
+    def _unique_compile_event_id(conn: sqlite3.Connection, event_id: str) -> str:
+        candidate = event_id
+        suffix = 1
+        while conn.execute("SELECT 1 FROM compile_events WHERE event_id = ?", (candidate,)).fetchone():
+            candidate = f"{event_id}.{suffix}"
+            suffix += 1
+        return candidate
+
+    def verify_compile_events(self) -> bool:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM compile_events ORDER BY rowid ASC").fetchall()
+
+        expected_previous = "GENESIS"
+        for row in rows:
+            if not row["previous_sha256"] or not row["payload_sha256"] or not row["event_sha256"]:
+                return False
+            try:
+                metrics = json.loads(row["metrics_json"] or "{}")
+            except json.JSONDecodeError:
+                return False
+            payload = {
+                "event_id": row["event_id"],
+                "request_hash": row["request_hash"],
+                "plan_hash": row["plan_hash"],
+                "metrics": metrics,
+                "created_at": row["created_at"],
+            }
+            payload_sha256 = sha256_json(payload)
+            event_sha256 = sha256_json({"payload_sha256": payload_sha256, "previous_sha256": expected_previous})
+            if row["previous_sha256"] != expected_previous:
+                return False
+            if row["payload_sha256"] != payload_sha256:
+                return False
+            if row["event_sha256"] != event_sha256:
+                return False
+            expected_previous = row["event_sha256"]
+        return True

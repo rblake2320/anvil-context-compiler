@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 from http import HTTPStatus
@@ -10,6 +11,15 @@ from urllib.parse import parse_qs, urlparse
 
 from .compiler import AnvilCompiler
 from .models import CompilerConfig, to_jsonable
+
+
+def _is_loopback(value: str) -> bool:
+    if value.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
@@ -28,7 +38,10 @@ class AnvilAPIHandler(BaseHTTPRequestHandler):
     def _authorized(self) -> bool:
         required = os.getenv("ANVIL_API_KEY", "").strip()
         if not required:
-            return True
+            allow_localhost = bool(getattr(self.server, "allow_unauthenticated_localhost", False))
+            bind_host = str(getattr(self.server, "bind_host", ""))
+            client_host = str(self.client_address[0])
+            return allow_localhost and _is_loopback(bind_host) and _is_loopback(client_host)
         got = self.headers.get("Authorization", "")
         return got == f"Bearer {required}"
 
@@ -79,9 +92,17 @@ class AnvilAPIHandler(BaseHTTPRequestHandler):
             super().log_message(format, *args)
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8787, config: CompilerConfig | None = None) -> None:
+def run_server(
+    host: str = "127.0.0.1",
+    port: int = 8787,
+    config: CompilerConfig | None = None,
+    *,
+    allow_unauthenticated_localhost: bool = False,
+) -> None:
     server = ThreadingHTTPServer((host, port), AnvilAPIHandler)
     server.compiler = AnvilCompiler(config or CompilerConfig())  # type: ignore[attr-defined]
+    server.bind_host = host  # type: ignore[attr-defined]
+    server.allow_unauthenticated_localhost = allow_unauthenticated_localhost  # type: ignore[attr-defined]
     print(f"ANVIL Context Compiler listening on http://{host}:{port}")
     server.serve_forever()
 
@@ -91,8 +112,18 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8787)
     parser.add_argument("--ledger", default=".anvil/anvil_ledger.sqlite3")
+    parser.add_argument(
+        "--allow-unauthenticated-localhost",
+        action="store_true",
+        help="Allow unauthenticated requests only from loopback clients when ANVIL_API_KEY is unset.",
+    )
     args = parser.parse_args()
-    run_server(args.host, args.port, CompilerConfig(ledger_path=args.ledger))
+    run_server(
+        args.host,
+        args.port,
+        CompilerConfig(ledger_path=args.ledger),
+        allow_unauthenticated_localhost=args.allow_unauthenticated_localhost,
+    )
 
 
 if __name__ == "__main__":

@@ -73,12 +73,12 @@ def cmd_list_spans(args: argparse.Namespace) -> int:
 
 def cmd_serve(args: argparse.Namespace) -> int:
     config = CompilerConfig(ledger_path=args.ledger, total_token_budget=args.budget).clamp()
-    run_server(args.host, args.port, config)
+    run_server(args.host, args.port, config, allow_unauthenticated_localhost=args.allow_unauthenticated_localhost)
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="anvil", description="ANVIL Context Compiler CLI")
+    parser = argparse.ArgumentParser(prog="anvil-compile", description="ANVIL Context Compiler CLI")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     c = sub.add_parser("compile", help="Compile a request into an ANVIL prompt package and execution DAG")
@@ -113,6 +113,11 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--port", type=int, default=8787)
     s.add_argument("--ledger", default=".anvil/anvil_ledger.sqlite3")
     s.add_argument("--budget", type=int, default=12_000)
+    s.add_argument(
+        "--allow-unauthenticated-localhost",
+        action="store_true",
+        help="Allow unauthenticated requests only from loopback clients when ANVIL_API_KEY is unset.",
+    )
     s.set_defaults(func=cmd_serve)
     return parser
 

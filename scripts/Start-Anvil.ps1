@@ -13,4 +13,4 @@ $activate = Join-Path $repo ".venv\Scripts\Activate.ps1"
 if (Test-Path $activate) { . $activate }
 
 $env:ANVIL_API_KEY = $ApiKey
-anvil serve --host $HostName --port $Port
+anvil-compile serve --host $HostName --port $Port

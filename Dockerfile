@@ -8,4 +8,4 @@ COPY src ./src
 COPY tests ./tests
 RUN python -m pip install --no-cache-dir -e . && python -m unittest discover -s tests
 EXPOSE 8787
-CMD ["anvil", "serve", "--host", "0.0.0.0", "--port", "8787"]
+CMD ["anvil-compile", "serve", "--host", "0.0.0.0", "--port", "8787"]

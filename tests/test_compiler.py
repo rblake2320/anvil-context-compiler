@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,6 +29,22 @@ class LedgerTests(unittest.TestCase):
             restored = ledger.rehydrate([span.span_id])
             self.assertEqual(restored[0].text, "Exact evidence text")
             self.assertEqual(restored[0].span_id, span.span_id)
+
+    def test_compile_events_are_hash_chained_and_tamper_evident(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "ledger.sqlite3"
+            ledger = ContextLedger(str(db_path))
+            ledger.put_compile_event("evt", "req_hash_1", "plan_hash_1", {"tokens": 10})
+            ledger.put_compile_event("evt", "req_hash_2", "plan_hash_2", {"tokens": 12})
+            self.assertTrue(ledger.verify_compile_events())
+
+            conn = sqlite3.connect(str(db_path))
+            try:
+                conn.execute("UPDATE compile_events SET plan_hash = ? WHERE event_id = ?", ("tampered", "evt"))
+                conn.commit()
+            finally:
+                conn.close()
+            self.assertFalse(ledger.verify_compile_events())
 
 
 class CompressorTests(unittest.TestCase):

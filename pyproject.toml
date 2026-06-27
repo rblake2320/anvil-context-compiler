@@ -20,7 +20,7 @@ classifiers = [
 dependencies = []
 
 [project.scripts]
-anvil = "anvil_context_compiler.cli:main"
+anvil-compile = "anvil_context_compiler.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

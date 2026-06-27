@@ -40,4 +40,4 @@ Invoke-NativeChecked "install package" { python -m pip install -e . }
 Invoke-NativeChecked "unit tests" { python -m unittest discover -s tests }
 
 Write-Host "ANVIL setup complete." -ForegroundColor Green
-Write-Host "Run: anvil compile --request 'Build smallest correct plan' --context-file .\examples\sample_context.md --out .\.anvil\plan.json" -ForegroundColor Cyan
+Write-Host "Run: anvil-compile compile --request 'Build smallest correct plan' --context-file .\examples\sample_context.md --out .\.anvil\plan.json" -ForegroundColor Cyan
