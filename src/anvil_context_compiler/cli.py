@@ -49,6 +49,7 @@ def cmd_compile(args: argparse.Namespace) -> int:
         tools=tools,
         config=config,
         project_name=args.project,
+        metadata={"scope_paths": args.scope_path or [], "scope_out": args.scope_out or []},
     )
     result = AnvilCompiler(config).compile(req)
     _write_json(args.out, result.to_dict())
@@ -102,6 +103,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--context-file", action="append", default=[])
     c.add_argument("--rules-file", action="append", default=[])
     c.add_argument("--tool-file")
+    c.add_argument("--scope-path", action="append", default=[], help="In-scope path root or glob for downstream harness policy.")
+    c.add_argument("--scope-out", action="append", default=[], help="Explicit out-of-scope path, system, or environment.")
     c.add_argument("--budget", type=int, default=12_000)
     c.add_argument("--max-output-tokens", type=int, default=1_200)
     c.add_argument("--max-loaded-tools", type=int, default=8)

@@ -116,6 +116,24 @@ class CompilerTests(unittest.TestCase):
             self.assertTrue(any(zone.name == "evidence_spans" for zone in result.zones))
             self.assertGreater(result.metrics["prompt_package_tokens"], 0)
 
+    def test_compile_preserves_scope_and_tool_policy_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            config = CompilerConfig(total_token_budget=3000, ledger_path=str(Path(td) / "ledger.sqlite3"))
+            compiler = AnvilCompiler(config)
+            result = compiler.compile(
+                CompileRequest(
+                    request="Build a minimal API.",
+                    evidence=[EvidenceDocument(text="Use src only.", source_uri="docs/spec.md", title="Spec")],
+                    tools=[ToolSpec(name="deploy.prod", description="Deploy production", risk="high", tags=["deploy"])],
+                    config=config,
+                    metadata={"scope_paths": ["src"], "scope_out": ["prod"]},
+                )
+            )
+            self.assertEqual(result.metadata["scope_paths"], ["src"])
+            self.assertEqual(result.metadata["scope_out"], ["prod"])
+            self.assertIn("docs/spec.md", result.metadata["evidence_source_uris"])
+            self.assertEqual(result.metadata["tool_policy"]["deferred_tool_risks"]["deploy.prod"], "high")
+
 
 if __name__ == "__main__":
     unittest.main()

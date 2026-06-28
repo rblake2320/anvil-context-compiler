@@ -171,6 +171,7 @@ class CompileResult:
     proof_ledger: list[ProofStep]
     warnings: list[str]
     metrics: dict[str, Any]
+    metadata: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=utc_now)
 
     def to_dict(self) -> dict[str, Any]:

@@ -57,6 +57,8 @@ class AnvilCompiler:
         all_tool_token_est = sum(max(1, tool.token_estimate or estimate_tokens(tool.description)) for tool in [*default_tools(), *req.tools])
         evidence_raw_tokens = sum(estimate_tokens(doc.text) for doc in req.evidence)
         budget = allocate_budget(config, system_tokens_raw, all_tool_token_est, evidence_raw_tokens)
+        scope_paths = self._metadata_list(req.metadata, "scope_paths", "scope_in", "paths")
+        scope_out = self._metadata_list(req.metadata, "scope_out")
 
         system_text = trim_to_tokens(system_text, budget.stable_prefix)
         proof.append("stable_prefix_budgeted", {"tokens": estimate_tokens(system_text), "budget": budget.stable_prefix})
@@ -111,6 +113,7 @@ class AnvilCompiler:
             content=task_state,
             cache_policy="mutable",
             priority=90,
+            metadata={"scope_paths": scope_paths, "scope_out": scope_out},
         )
         tool_zone = self._zone(
             name="tool_surface",
@@ -126,7 +129,11 @@ class AnvilCompiler:
             cache_policy="rehydratable",
             priority=70,
             ledger_refs=[span.span_id for span in compression.spans],
-            metadata={"compression_ratio": compression.compression_ratio, "dropped_span_count": compression.dropped_span_count},
+            metadata={
+                "compression_ratio": compression.compression_ratio,
+                "dropped_span_count": compression.dropped_span_count,
+                "source_uris": sorted({doc.source_uri for doc in req.evidence if doc.source_uri}),
+            },
         )
         volatile_zone = self._zone(
             name="volatile_results",
@@ -161,6 +168,16 @@ class AnvilCompiler:
             "rehydratable_span_count": len(compression.spans),
             "plan_hash": plan_hash,
         }
+        result_metadata = {
+            "scope_paths": scope_paths,
+            "scope_out": scope_out,
+            "evidence_source_uris": sorted({doc.source_uri for doc in req.evidence if doc.source_uri}),
+            "tool_policy": {
+                "allow_high_risk_tools": config.allow_high_risk_tools,
+                "loaded_tool_risks": {tool.name: tool.risk for tool in tool_selection.loaded},
+                "deferred_tool_risks": {tool.name: tool.risk for tool in tool_selection.deferred},
+            },
+        }
         self.ledger.put_compile_event(request_id, request_hash, plan_hash, metrics)
 
         return CompileResult(
@@ -178,6 +195,7 @@ class AnvilCompiler:
             proof_ledger=proof.steps,
             warnings=warnings,
             metrics=metrics,
+            metadata=result_metadata,
         )
 
     def compile_from_dict(self, payload: dict[str, Any]) -> CompileResult:
@@ -195,6 +213,25 @@ class AnvilCompiler:
             metadata=payload.get("metadata", {}),
         )
         return self.compile(req)
+
+    @staticmethod
+    def _metadata_list(metadata: dict[str, Any], *keys: str) -> list[str]:
+        values: list[str] = []
+        for key in keys:
+            raw = metadata.get(key)
+            if raw is None:
+                continue
+            if isinstance(raw, str):
+                candidates = [raw]
+            elif isinstance(raw, (list, tuple, set)):
+                candidates = [str(item) for item in raw]
+            else:
+                candidates = [str(raw)]
+            for item in candidates:
+                item = item.strip()
+                if item and item not in values:
+                    values.append(item)
+        return values
 
     @staticmethod
     def _normalize_intent(text: str) -> str:

@@ -45,10 +45,14 @@ Python 3.11+ works. Python 3.12 is recommended for Windows shops.
 anvil-compile compile `
   --request "Build a minimal repo scanner without unnecessary dependencies" `
   --context-file .\examples\sample_context.md `
+  --scope-path src `
+  --scope-out prod `
   --budget 12000 `
   --out .\.anvil\plan.json `
   --prompt-out .\.anvil\compiled_prompt.txt
 ```
+
+`--scope-path` and `--scope-out` are preserved in plan metadata so `anvil-core` can emit harness-ready `scope_in`, `scope_out`, and per-task `paths`.
 
 ## Run the local API
 
